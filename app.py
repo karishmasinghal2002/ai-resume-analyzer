@@ -1,100 +1,76 @@
 
 import streamlit as st
-import re
-from collections import Counter
+
+from resume_analyzer import analyze_resume, extract_text_from_file
 
 st.set_page_config(page_title="AI Resume Analyzer", page_icon="📄", layout="wide")
 
-st.title("📄 AI Resume Analyzer & Job Matcher")
-st.write("Analyze how well your resume matches a job description.")
+st.title("📄 AI Resume Analyzer")
+st.caption("Compare a resume against a job description and identify skill gaps.")
 
-SKILLS = [
-    "python", "java", "javascript", "react", "node.js", "sql",
-    "machine learning", "deep learning", "artificial intelligence",
-    "data analysis", "pandas", "numpy", "tensorflow", "pytorch",
-    "fastapi", "flask", "django", "html", "css", "git", "github",
-    "rest api", "docker", "aws", "communication", "problem solving",
-    "c++", "c", "excel", "power bi"
-]
+if "resume_text" not in st.session_state:
+    st.session_state.resume_text = ""
 
-def extract_skills(text):
-    text = text.lower()
-    found = []
-    for skill in SKILLS:
-        pattern = r"(?<!\w)" + re.escape(skill) + r"(?!\w)"
-        if re.search(pattern, text):
-            found.append(skill)
-    return found
+uploaded_resume = st.file_uploader(
+    "Upload your resume",
+    type=["txt", "pdf", "docx"],
+    help="Supported formats: TXT, PDF, and DOCX.",
+)
 
-def analyze_resume(resume, job_description):
-    resume_skills = set(extract_skills(resume))
-    job_skills = set(extract_skills(job_description))
-
-    if not job_skills:
-        return None
-
-    matched = sorted(resume_skills & job_skills)
-    missing = sorted(job_skills - resume_skills)
-    score = round(len(matched) / len(job_skills) * 100)
-
-    return score, matched, missing
+if uploaded_resume is not None:
+    try:
+        st.session_state.resume_text = extract_text_from_file(uploaded_resume)
+    except Exception as exc:
+        st.warning(f"Unable to read the uploaded file: {exc}")
 
 resume = st.text_area(
-    "Paste your resume text",
-    height=220,
-    placeholder="Paste your education, skills, projects and experience..."
+    "Resume text",
+    value=st.session_state.resume_text,
+    height=250,
+    placeholder="Paste your resume text here...",
 )
 
 job = st.text_area(
-    "Paste the job description",
-    height=220,
-    placeholder="Paste the skills and requirements from a job posting..."
+    "Job description",
+    height=250,
+    placeholder="Paste the job description here...",
 )
 
 if st.button("Analyze Resume", type="primary"):
     if not resume.strip() or not job.strip():
-        st.warning("Please enter both your resume and the job description.")
+        st.warning("Please add both a resume and a job description before analyzing.")
     else:
         result = analyze_resume(resume, job)
 
-        if result is None:
-            st.warning("No supported skills found in the job description. Try adding technical skills.")
-        else:
-            score, matched, missing = result
+        st.subheader("📊 Match Summary")
+        st.metric("Skill Match Score", f"{result['score']}%")
+        st.progress(min(result["score"], 100) / 100)
+        st.info(result["summary"])
 
-            st.subheader("📊 Analysis Results")
-            st.metric("Job Skill Match Score", f"{score}%")
-            st.progress(score / 100)
+        col1, col2 = st.columns(2)
 
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.success("✅ Matched Skills")
-                if matched:
-                    st.write(", ".join(matched))
-                else:
-                    st.write("No matching skills found.")
-
-            with col2:
-                st.error("📌 Missing Skills")
-                if missing:
-                    st.write(", ".join(missing))
-                else:
-                    st.write("No missing skills from our current skill list!")
-
-            st.info(
-                "This is a rule-based skill match score, not an official ATS score "
-                "or a prediction of whether you will get hired."
-            )
-
-            st.subheader("💡 Suggested Next Steps")
-            if missing:
-                st.write(
-                    "Review these job requirements and learn the relevant skills: "
-                    + ", ".join(missing)
-                )
+        with col1:
+            st.success("✅ Matched skills")
+            if result["matched_skills"]:
+                st.write(", ".join(result["matched_skills"]))
             else:
-                st.write(
-                    "Your listed skills match the supported skills in this job description. "
-                    "Review the required experience and project expectations too."
-                )
+                st.write("No matching skills found yet.")
+
+        with col2:
+            st.error("📌 Missing skills")
+            if result["missing_skills"]:
+                st.write(", ".join(result["missing_skills"]))
+            else:
+                st.write("No missing skills from the tracked skill list.")
+
+        st.subheader("💡 Suggested next steps")
+        if result["missing_skills"]:
+            st.write(
+                "Focus on improving these areas before applying: "
+                + ", ".join(result["missing_skills"])
+            )
+        else:
+            st.write(
+                "Your resume covers the main skill areas in this job description. "
+                "Consider tailoring the experience section and projects to make the match clearer."
+            )
